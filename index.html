@@ -1,0 +1,627 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Spec-Short Capitulation Index</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<style>
+/* ============================================================
+   VP-style institutional research dashboard
+   Palette: paper #f5f3ee · ink #12171f · slate #5a6472
+            signal-green #16835a · amber #b07410 · red #a8362b
+            hairline #d9d5cc · teal accent #0e7c74
+   Type:   tabular sans for data, tight grotesque feel via weights
+   ============================================================ */
+:root{
+  --paper:#f5f3ee; --card:#fbfaf7; --ink:#12171f; --ink2:#2b333d;
+  --slate:#5a6472; --faint:#8a909a; --hair:#d9d5cc; --hair2:#e8e5dd;
+  --teal:#0e7c74; --purple:#5b3b8c;
+  --green:#16835a; --greenbg:#e7f2ec; --amber:#b07410; --amberbg:#f6efe0;
+  --red:#a8362b; --redbg:#f6e7e4; --slatebg:#edeef0;
+}
+.stale{font-size:11.5px;font-weight:600;line-height:1.5;padding:10px 16px;border:1px solid;
+  display:flex;gap:9px;align-items:flex-start;margin-bottom:0}
+.stale .ico{font-size:14px;line-height:1.1;flex-shrink:0}
+.stale.warn{background:var(--amberbg);color:#7a5008;border-color:#e6d3a8}
+.stale.bad{background:var(--redbg);color:#7c281f;border-color:#e3b8b2}
+.stale.fresh{background:var(--greenbg);color:#0e5c3e;border-color:#bfe0cf}
+.stale code{background:rgba(0,0,0,.06);padding:1px 5px;font-size:10.5px}
+*{box-sizing:border-box;margin:0;padding:0}
+html{-webkit-text-size-adjust:100%}
+body{background:var(--paper);color:var(--ink);
+  font-family:"Helvetica Neue",-apple-system,BlinkMacSystemFont,Arial,sans-serif;
+  font-feature-settings:"tnum" 1,"lnum" 1;line-height:1.5;padding:20px}
+.shell{max-width:1180px;margin:0 auto}
+
+/* ── MASTHEAD ── */
+.mast{display:flex;justify-content:space-between;align-items:flex-end;gap:16px;
+  flex-wrap:wrap;padding-bottom:14px;border-bottom:2px solid var(--ink)}
+.eyebrow{font-size:10.5px;font-weight:700;letter-spacing:2.4px;color:var(--teal);
+  text-transform:uppercase;margin-bottom:7px}
+.mast h1{font-size:27px;font-weight:800;letter-spacing:-.4px;line-height:1.05}
+.mast .sub{font-size:12.5px;color:var(--slate);margin-top:5px;max-width:560px}
+.mast .right{text-align:right;display:flex;flex-direction:column;align-items:flex-end;gap:8px}
+.pill{display:inline-flex;align-items:center;gap:7px;font-size:11px;font-weight:700;
+  letter-spacing:.4px;padding:5px 11px;border-radius:2px;text-transform:uppercase;
+  border:1px solid transparent}
+.pill .led{width:7px;height:7px;border-radius:50%}
+.pill.live{background:var(--greenbg);color:var(--green);border-color:#bfe0cf}
+.pill.live .led{background:var(--green)}
+.pill.snap{background:var(--slatebg);color:var(--slate);border-color:var(--hair)}
+.pill.snap .led{background:var(--slate)}
+.pill.load{background:var(--amberbg);color:var(--amber);border-color:#e6d3a8}
+.pill.load .led{background:var(--amber);animation:blink 1s infinite}
+@keyframes blink{0%,100%{opacity:1}50%{opacity:.35}}
+.asof{font-size:11px;color:var(--faint)}
+
+/* ── HERO ── */
+.hero{display:grid;grid-template-columns:minmax(220px,1fr) 2.1fr;gap:14px;margin:16px 0 6px}
+@media(max-width:760px){.hero{grid-template-columns:1fr}}
+.readout{background:var(--card);border:1px solid var(--hair);padding:16px 18px;
+  display:flex;flex-direction:column;justify-content:space-between}
+.readout .lab{font-size:10.5px;font-weight:700;letter-spacing:1.6px;color:var(--faint);
+  text-transform:uppercase}
+.readout .big{font-size:62px;font-weight:800;letter-spacing:-2px;line-height:.95;margin:6px 0 2px}
+.readout .big .pc{font-size:30px;font-weight:700;color:var(--slate);letter-spacing:-1px}
+.regime{display:inline-flex;align-items:center;gap:7px;font-size:12px;font-weight:800;
+  letter-spacing:.4px;text-transform:uppercase;padding:5px 10px;border-radius:2px;width:fit-content}
+.regime.cap{background:var(--greenbg);color:var(--green)}
+.regime.neu{background:var(--slatebg);color:var(--slate)}
+.regime.com{background:var(--amberbg);color:var(--amber)}
+.readout .meta{font-size:11.5px;color:var(--slate);margin-top:12px;line-height:1.45}
+.readout .meta b{color:var(--ink)}
+
+/* ── SIGNATURE: regime gauge ── */
+.gauge{background:var(--card);border:1px solid var(--hair);padding:16px 20px 12px;
+  display:flex;flex-direction:column}
+.gauge .ghead{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:4px}
+.gauge .ghead .t{font-size:11px;font-weight:700;letter-spacing:1.4px;color:var(--faint);text-transform:uppercase}
+.gauge .ghead .h{font-size:11px;color:var(--slate)}
+.gauge svg{width:100%;height:auto;display:block;margin-top:auto}
+.gauge .glegend{display:flex;gap:16px;flex-wrap:wrap;font-size:10.5px;color:var(--slate);margin-top:8px}
+.gauge .glegend i{display:inline-block;width:10px;height:10px;border-radius:2px;margin-right:5px;vertical-align:-1px}
+
+/* ── METHOD STRIP ── */
+.method{font-size:11px;color:var(--slate);background:var(--card);border:1px solid var(--hair);
+  border-top:none;padding:9px 18px;line-height:1.55}
+.method b{color:var(--ink)}
+.method code{background:#ece9e1;padding:1px 5px;font-size:10px;color:var(--purple)}
+
+/* ── CONTROLS ── */
+.tools{display:flex;align-items:center;gap:5px;flex-wrap:wrap;margin:16px 0 8px;
+  padding-bottom:10px;border-bottom:1px solid var(--hair)}
+.tools .grp{display:flex;gap:0}
+.tools button{font:700 11px "Helvetica Neue",Arial;color:var(--ink2);background:var(--card);
+  border:1px solid var(--hair);padding:5px 11px;cursor:pointer;letter-spacing:.3px;margin-left:-1px}
+.tools button:first-child{margin-left:0}
+.tools button:hover{background:#fff;border-color:var(--slate);z-index:1;position:relative}
+.tools button.on{background:var(--ink);color:#fff;border-color:var(--ink);z-index:1;position:relative}
+.tools .spacer{flex:1}
+.tools .util{margin-left:5px}
+
+/* ── PANELS ── */
+.panel{margin-bottom:10px}
+.plab{display:flex;align-items:center;gap:9px;font-size:12px;font-weight:700;
+  color:var(--ink2);margin-bottom:6px;letter-spacing:.2px}
+.plab .key{width:22px;height:3px;border-radius:1px}
+.plab .key.dot{width:9px;height:9px;border-radius:50%}
+.plab .muted{font-weight:500;color:var(--faint);font-size:11.5px}
+.wrap{position:relative;background:var(--card);border:1px solid var(--hair);padding:8px 10px 4px}
+canvas{display:block}
+
+/* ── BACKTEST ── */
+.section-h{font-size:11px;font-weight:700;letter-spacing:1.6px;color:var(--faint);
+  text-transform:uppercase;margin:20px 0 8px;padding-bottom:5px;border-bottom:1px solid var(--hair)}
+.bt{border:1px solid var(--hair);background:var(--card)}
+.bt table{width:100%;border-collapse:collapse;font-size:12px}
+.bt th{font-weight:700;text-align:right;padding:8px 13px;border-bottom:1px solid var(--hair);
+  font-size:10.5px;letter-spacing:.4px;color:var(--slate);text-transform:uppercase}
+.bt th:first-child{text-align:left}
+.bt td{text-align:right;padding:8px 13px;border-bottom:1px solid var(--hair2);font-variant-numeric:tabular-nums}
+.bt tr:last-child td{border-bottom:none}
+.bt td:first-child{text-align:left;font-weight:700}
+.bt tr.t42 td:first-child{box-shadow:inset 3px 0 0 var(--green)}
+.bt tr.t50 td:first-child{box-shadow:inset 3px 0 0 var(--amber)}
+.bt tr.t60 td:first-child{box-shadow:inset 3px 0 0 var(--red)}
+.bt tr.base td{color:var(--faint);font-weight:600}
+.bt tr.base td:first-child{font-weight:600}
+.bt .pos{color:var(--green);font-weight:700}
+.bt .neg{color:var(--red);font-weight:700}
+.bt .cap{font-size:10.5px;color:var(--faint);padding:8px 13px;font-style:italic;line-height:1.5}
+
+/* ── DATA TABLE ── */
+.dt{border:1px solid var(--hair);background:var(--card)}
+.dthead{display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;
+  padding:9px 13px;border-bottom:1px solid var(--hair);background:var(--card)}
+.dthead .dtt{font-size:10.5px;font-weight:700;letter-spacing:1px;color:var(--slate);text-transform:uppercase}
+.dtc{display:flex;gap:6px;align-items:center;flex-wrap:wrap}
+.dtc input{font:12px "Helvetica Neue",Arial;padding:4px 9px;border:1px solid var(--hair);
+  background:var(--paper);color:var(--ink);width:170px;outline:none}
+.dtc input:focus{border-color:var(--teal)}
+.dtc button{font:700 10.5px "Helvetica Neue",Arial;color:var(--ink2);background:var(--paper);
+  border:1px solid var(--hair);padding:4px 10px;cursor:pointer;letter-spacing:.3px}
+.dtc button:hover{border-color:var(--slate)}
+.dtscroll{max-height:400px;overflow:auto}
+.dtscroll table{width:100%;border-collapse:collapse;font-size:12px;white-space:nowrap}
+.dtscroll thead th{position:sticky;top:0;z-index:2;background:#efece4;
+  font:700 10.5px "Helvetica Neue",Arial;text-align:right;padding:7px 13px;
+  border-bottom:1.5px solid var(--ink);cursor:pointer;user-select:none;letter-spacing:.3px;
+  color:var(--slate);text-transform:uppercase}
+.dtscroll thead th:first-child{text-align:left}
+.dtscroll thead th:hover{background:#e6e2d8}
+.dtscroll thead th.asc::after{content:" \2191";color:var(--teal)}
+.dtscroll thead th.desc::after{content:" \2193";color:var(--teal)}
+.dtscroll tbody td{text-align:right;padding:6px 13px;border-bottom:1px solid var(--hair2);
+  font-variant-numeric:tabular-nums}
+.dtscroll tbody td:first-child{text-align:left;font-weight:600}
+.dtscroll tbody tr:hover{background:var(--paper)}
+.dtscroll td.sig{color:var(--green);font-weight:700;background:var(--greenbg)}
+.dtscroll td.hi{color:var(--red);font-weight:700}
+.dtscroll td.lo{color:var(--teal);font-weight:700}
+.dtcount{font-size:10.5px;color:var(--faint);padding:7px 13px;border-top:1px solid var(--hair2);font-style:italic}
+
+/* ── FOOTER ── */
+.foot{margin-top:18px;padding-top:11px;border-top:2px solid var(--ink);
+  display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;font-size:10.5px;color:var(--faint);line-height:1.5}
+.foot b{color:var(--ink2);letter-spacing:.6px}
+.foot .basket{font-variant-numeric:tabular-nums}
+@media(max-width:760px){
+  .mast h1{font-size:21px}.readout .big{font-size:48px}
+  body{padding:13px}
+}
+</style>
+</head>
+<body>
+<div class="shell">
+
+  <!-- MASTHEAD -->
+  <header class="mast">
+    <div class="left">
+      <div class="eyebrow">Sentiment &middot; Speculative Positioning</div>
+      <h1>Spec-Short Capitulation Index</h1>
+      <div class="sub">Share of speculative-ETF volume that is betting against the market.
+        High readings mark crowded pessimism &mdash; historically where pullbacks exhaust.</div>
+    </div>
+    <div class="right">
+      <span class="pill load" id="pill"><span class="led"></span><span id="pillTxt">Loading</span></span>
+      <span class="asof" id="asof"></span>
+    </div>
+  </header>
+
+  <!-- HERO -->
+  <section class="hero">
+    <div class="readout">
+      <div>
+        <div class="lab">Current reading</div>
+        <div class="big" id="bigPct">&mdash;<span class="pc">%</span></div>
+        <div class="regime neu" id="regime">&mdash;</div>
+      </div>
+      <div class="meta" id="heroMeta"></div>
+    </div>
+
+    <div class="gauge">
+      <div class="ghead">
+        <span class="t">10-Year Distribution &amp; Live Position</span>
+        <span class="h" id="gaugeH"></span>
+      </div>
+      <svg id="gaugeSvg" viewBox="0 0 700 132" preserveAspectRatio="xMidYMid meet" role="img" aria-label="Regime gauge"></svg>
+      <div class="glegend">
+        <span><i style="background:var(--amberbg);border:1px solid #e6d3a8"></i>Complacency &lt;28%</span>
+        <span><i style="background:var(--slatebg);border:1px solid var(--hair)"></i>Neutral</span>
+        <span><i style="background:var(--greenbg);border:1px solid #bfe0cf"></i>Capitulation &ge;42%</span>
+        <span><i style="background:var(--ink)"></i>Current</span>
+      </div>
+    </div>
+  </section>
+
+  <div class="method">
+    <b>Method:</b> % Short = inverse-ETF <b>dollar</b> volume &divide; total speculative-ETF dollar volume
+    (leveraged-long + inverse), weekly. Dollar volume (shares &times; price) is used deliberately: raw share
+    volume is dominated by ultra-low-priced inverse funds (e.g. TZA near $4 trades 300M+ shares), which
+    distorts the ratio; dollar-weighting reproduces the 3Fourteen band. Data is refreshed
+    <b>server-side daily</b> by a scheduled job and read from <code>data.json</code> &mdash; no browser-side
+    market fetch, so it works reliably wherever it's hosted.
+  </div>
+
+  <!-- STALENESS BANNER -->
+  <div class="stale" id="staleBar" style="display:none"></div>
+
+  <!-- CONTROLS -->
+  <div class="tools">
+    <div class="grp">
+      <button data-r="52">1Y</button>
+      <button data-r="156">3Y</button>
+      <button data-r="260">5Y</button>
+      <button data-r="9999" class="on">10Y</button>
+    </div>
+    <button class="util" id="modeBtn">View: % Short</button>
+    <button class="util" id="maBtn">4-wk avg: off</button>
+    <div class="spacer"></div>
+    <button class="util" id="reloadBtn">&#8635; Reload</button>
+    <button class="util" id="autoBtn">Auto: off</button>
+  </div>
+
+  <!-- PANELS -->
+  <div class="panel">
+    <div class="plab">
+      <span class="key" style="background:var(--purple)"></span><span id="lspx">S&amp;P 500</span>
+      <span class="key dot" style="background:var(--green);margin-left:8px"></span>
+      <span class="muted">&ge;42% capitulation signal</span>
+    </div>
+    <div class="wrap" style="height:300px"><canvas id="cTop"></canvas></div>
+  </div>
+
+  <div class="panel">
+    <div class="plab"><span class="key" style="background:var(--teal)"></span><span id="lpct">% Spec Short Volume</span></div>
+    <div class="wrap" style="height:250px"><canvas id="cBot"></canvas></div>
+  </div>
+
+  <!-- BACKTEST -->
+  <div class="section-h">Forward S&amp;P 500 returns by signal threshold</div>
+  <div class="bt"><table id="btTable"></table><div class="cap" id="btNote"></div></div>
+
+  <!-- DATA TABLE -->
+  <div class="section-h">Weekly series</div>
+  <div class="dt">
+    <div class="dthead">
+      <span class="dtt">% Spec Short Volume &mdash; full history</span>
+      <div class="dtc">
+        <input type="text" id="dtSearch" placeholder="Filter date or value&hellip;">
+        <button id="dtCsv">&#8595; CSV</button>
+        <button id="dtToggle">Hide</button>
+      </div>
+    </div>
+    <div id="dtWrap">
+      <div class="dtscroll">
+        <table id="dtTable">
+          <thead><tr>
+            <th data-col="date" data-dir="desc" class="desc">Week (Fri)</th>
+            <th data-col="spx">S&amp;P 500</th>
+            <th data-col="pct">% Short</th>
+            <th data-col="pctile">10-Yr Pctile</th>
+            <th data-col="signal">Signal</th>
+          </tr></thead>
+          <tbody id="dtBody"></tbody>
+        </table>
+      </div>
+      <div class="dtcount" id="dtCount"></div>
+    </div>
+  </div>
+
+  <footer class="foot">
+    <span><b>RECREATION</b> &mdash; methodology inferred from Warren Pies' public description (Excess Returns, 2024).
+      Not affiliated with 3Fourteen Research. Research/education only; not investment advice.</span>
+    <span class="basket"><b>UNIVERSE</b><br>Short: SH SDS SPXU SPXS PSQ SQQQ SDOW TZA<br>Long: SSO UPRO SPXL QLD TQQQ UDOW TNA SOXL</span>
+  </footer>
+</div>
+
+<script>
+/* ════════ EMBEDDED SERIES (baked) ════════ */
+const SNAPSHOT = [{"date": "2016-08-19", "spx": 2183.87, "pct": 38.47}, {"date": "2016-08-26", "spx": 2169.04, "pct": 42.3}, {"date": "2016-09-02", "spx": 2179.98, "pct": 42.28}, {"date": "2016-09-09", "spx": 2127.81, "pct": 45.1}, {"date": "2016-09-16", "spx": 2139.16, "pct": 45.92}, {"date": "2016-09-23", "spx": 2164.69, "pct": 41.92}, {"date": "2016-09-30", "spx": 2168.27, "pct": 41.01}, {"date": "2016-10-07", "spx": 2153.74, "pct": 39.07}, {"date": "2016-10-14", "spx": 2132.98, "pct": 42.57}, {"date": "2016-10-21", "spx": 2141.16, "pct": 43.71}, {"date": "2016-10-28", "spx": 2126.41, "pct": 43.97}, {"date": "2016-11-04", "spx": 2085.18, "pct": 51.99}, {"date": "2016-11-11", "spx": 2164.45, "pct": 46.44}, {"date": "2016-11-18", "spx": 2181.9, "pct": 40.15}, {"date": "2016-11-25", "spx": 2213.35, "pct": 35.87}, {"date": "2016-12-02", "spx": 2191.95, "pct": 35.21}, {"date": "2016-12-09", "spx": 2259.53, "pct": 33.68}, {"date": "2016-12-16", "spx": 2258.07, "pct": 33.31}, {"date": "2016-12-23", "spx": 2263.79, "pct": 30.23}, {"date": "2016-12-30", "spx": 2238.83, "pct": 33.91}, {"date": "2017-01-06", "spx": 2276.98, "pct": 32.47}, {"date": "2017-01-13", "spx": 2274.64, "pct": 30.96}, {"date": "2017-01-20", "spx": 2271.31, "pct": 33.83}, {"date": "2017-01-27", "spx": 2294.69, "pct": 34.48}, {"date": "2017-02-03", "spx": 2297.42, "pct": 31.28}, {"date": "2017-02-10", "spx": 2316.1, "pct": 34.07}, {"date": "2017-02-17", "spx": 2351.16, "pct": 36.71}, {"date": "2017-02-24", "spx": 2367.34, "pct": 34.39}, {"date": "2017-03-03", "spx": 2383.12, "pct": 37.0}, {"date": "2017-03-10", "spx": 2372.6, "pct": 33.68}, {"date": "2017-03-17", "spx": 2378.25, "pct": 32.72}, {"date": "2017-03-24", "spx": 2343.98, "pct": 40.61}, {"date": "2017-03-31", "spx": 2362.72, "pct": 36.94}, {"date": "2017-04-07", "spx": 2355.54, "pct": 38.06}, {"date": "2017-04-14", "spx": 2328.95, "pct": 37.31}, {"date": "2017-04-21", "spx": 2348.69, "pct": 37.07}, {"date": "2017-04-28", "spx": 2384.2, "pct": 37.76}, {"date": "2017-05-05", "spx": 2399.29, "pct": 33.53}, {"date": "2017-05-12", "spx": 2390.9, "pct": 33.41}, {"date": "2017-05-19", "spx": 2381.73, "pct": 37.06}, {"date": "2017-05-26", "spx": 2415.82, "pct": 37.47}, {"date": "2017-06-02", "spx": 2439.07, "pct": 33.3}, {"date": "2017-06-09", "spx": 2431.77, "pct": 32.9}, {"date": "2017-06-16", "spx": 2433.15, "pct": 36.05}, {"date": "2017-06-23", "spx": 2438.3, "pct": 34.49}, {"date": "2017-06-30", "spx": 2423.41, "pct": 35.77}, {"date": "2017-07-07", "spx": 2425.18, "pct": 36.74}, {"date": "2017-07-14", "spx": 2459.27, "pct": 33.47}, {"date": "2017-07-21", "spx": 2472.54, "pct": 36.35}, {"date": "2017-07-28", "spx": 2472.1, "pct": 38.23}, {"date": "2017-08-04", "spx": 2476.83, "pct": 40.05}, {"date": "2017-08-11", "spx": 2441.32, "pct": 44.45}, {"date": "2017-08-18", "spx": 2425.55, "pct": 45.99}, {"date": "2017-08-25", "spx": 2443.05, "pct": 44.04}, {"date": "2017-09-01", "spx": 2476.55, "pct": 43.42}, {"date": "2017-09-08", "spx": 2461.43, "pct": 44.59}, {"date": "2017-09-15", "spx": 2500.23, "pct": 38.92}, {"date": "2017-09-22", "spx": 2502.22, "pct": 40.69}, {"date": "2017-09-29", "spx": 2519.36, "pct": 37.89}, {"date": "2017-10-06", "spx": 2549.33, "pct": 35.91}, {"date": "2017-10-13", "spx": 2553.17, "pct": 32.76}, {"date": "2017-10-20", "spx": 2575.21, "pct": 32.08}, {"date": "2017-10-27", "spx": 2581.07, "pct": 33.99}, {"date": "2017-11-03", "spx": 2587.84, "pct": 29.91}, {"date": "2017-11-10", "spx": 2582.3, "pct": 32.04}, {"date": "2017-11-17", "spx": 2578.85, "pct": 34.88}, {"date": "2017-11-24", "spx": 2602.42, "pct": 29.58}, {"date": "2017-12-01", "spx": 2642.22, "pct": 32.94}, {"date": "2017-12-08", "spx": 2651.5, "pct": 32.62}, {"date": "2017-12-15", "spx": 2675.81, "pct": 29.12}, {"date": "2017-12-22", "spx": 2683.34, "pct": 29.33}, {"date": "2017-12-29", "spx": 2673.61, "pct": 31.13}, {"date": "2018-01-05", "spx": 2743.15, "pct": 26.42}, {"date": "2018-01-12", "spx": 2786.24, "pct": 23.28}, {"date": "2018-01-19", "spx": 2810.3, "pct": 25.58}, {"date": "2018-01-26", "spx": 2872.87, "pct": 21.74}, {"date": "2018-02-02", "spx": 2762.13, "pct": 32.24}, {"date": "2018-02-09", "spx": 2619.55, "pct": 44.78}, {"date": "2018-02-16", "spx": 2732.22, "pct": 34.86}, {"date": "2018-02-23", "spx": 2747.3, "pct": 32.87}, {"date": "2018-03-02", "spx": 2691.25, "pct": 33.42}, {"date": "2018-03-09", "spx": 2786.57, "pct": 27.71}, {"date": "2018-03-16", "spx": 2752.01, "pct": 27.25}, {"date": "2018-03-23", "spx": 2588.26, "pct": 38.55}, {"date": "2018-03-30", "spx": 2640.87, "pct": 36.91}, {"date": "2018-04-06", "spx": 2604.47, "pct": 37.64}, {"date": "2018-04-13", "spx": 2656.3, "pct": 34.12}, {"date": "2018-04-20", "spx": 2670.14, "pct": 33.12}, {"date": "2018-04-27", "spx": 2669.91, "pct": 31.91}, {"date": "2018-05-04", "spx": 2663.42, "pct": 30.99}, {"date": "2018-05-11", "spx": 2727.72, "pct": 30.33}, {"date": "2018-05-18", "spx": 2712.97, "pct": 29.92}, {"date": "2018-05-25", "spx": 2721.33, "pct": 32.38}, {"date": "2018-06-01", "spx": 2734.62, "pct": 32.36}, {"date": "2018-06-08", "spx": 2779.03, "pct": 33.61}, {"date": "2018-06-15", "spx": 2779.66, "pct": 31.62}, {"date": "2018-06-22", "spx": 2754.88, "pct": 30.3}, {"date": "2018-06-29", "spx": 2718.37, "pct": 35.91}, {"date": "2018-07-06", "spx": 2759.82, "pct": 34.73}, {"date": "2018-07-13", "spx": 2801.31, "pct": 31.51}, {"date": "2018-07-20", "spx": 2801.83, "pct": 30.7}, {"date": "2018-07-27", "spx": 2818.82, "pct": 30.8}, {"date": "2018-08-03", "spx": 2840.35, "pct": 33.3}, {"date": "2018-08-10", "spx": 2833.28, "pct": 30.12}, {"date": "2018-08-17", "spx": 2850.13, "pct": 32.47}, {"date": "2018-08-24", "spx": 2874.69, "pct": 28.51}, {"date": "2018-08-31", "spx": 2901.52, "pct": 30.06}, {"date": "2018-09-07", "spx": 2871.68, "pct": 33.16}, {"date": "2018-09-14", "spx": 2904.98, "pct": 29.15}, {"date": "2018-09-21", "spx": 2929.67, "pct": 34.97}, {"date": "2018-09-28", "spx": 2913.98, "pct": 34.89}, {"date": "2018-10-05", "spx": 2885.57, "pct": 35.46}, {"date": "2018-10-12", "spx": 2767.13, "pct": 48.71}, {"date": "2018-10-19", "spx": 2767.78, "pct": 43.94}, {"date": "2018-10-26", "spx": 2658.69, "pct": 51.35}, {"date": "2018-11-02", "spx": 2723.06, "pct": 48.82}, {"date": "2018-11-09", "spx": 2781.01, "pct": 42.34}, {"date": "2018-11-16", "spx": 2736.27, "pct": 46.94}, {"date": "2018-11-23", "spx": 2632.56, "pct": 48.52}, {"date": "2018-11-30", "spx": 2760.17, "pct": 37.85}, {"date": "2018-12-07", "spx": 2633.08, "pct": 47.94}, {"date": "2018-12-14", "spx": 2599.95, "pct": 49.25}, {"date": "2018-12-21", "spx": 2416.62, "pct": 60.18}, {"date": "2018-12-28", "spx": 2485.74, "pct": 51.3}, {"date": "2019-01-04", "spx": 2531.94, "pct": 47.63}, {"date": "2019-01-11", "spx": 2596.26, "pct": 42.24}, {"date": "2019-01-18", "spx": 2670.71, "pct": 40.6}, {"date": "2019-01-25", "spx": 2664.76, "pct": 38.75}, {"date": "2019-02-01", "spx": 2706.53, "pct": 36.87}, {"date": "2019-02-08", "spx": 2707.88, "pct": 41.09}, {"date": "2019-02-15", "spx": 2775.6, "pct": 34.64}, {"date": "2019-02-22", "spx": 2792.67, "pct": 30.03}, {"date": "2019-03-01", "spx": 2803.69, "pct": 33.34}, {"date": "2019-03-08", "spx": 2743.07, "pct": 39.43}, {"date": "2019-03-15", "spx": 2822.48, "pct": 35.3}, {"date": "2019-03-22", "spx": 2800.71, "pct": 34.88}, {"date": "2019-03-29", "spx": 2834.4, "pct": 37.04}, {"date": "2019-04-05", "spx": 2892.74, "pct": 28.9}, {"date": "2019-04-12", "spx": 2907.41, "pct": 26.71}, {"date": "2019-04-19", "spx": 2905.03, "pct": 26.18}, {"date": "2019-04-26", "spx": 2939.88, "pct": 25.91}, {"date": "2019-05-03", "spx": 2945.64, "pct": 26.68}, {"date": "2019-05-10", "spx": 2881.4, "pct": 33.1}, {"date": "2019-05-17", "spx": 2859.53, "pct": 35.85}, {"date": "2019-05-24", "spx": 2826.06, "pct": 38.61}, {"date": "2019-05-31", "spx": 2752.06, "pct": 47.25}, {"date": "2019-06-07", "spx": 2873.34, "pct": 40.42}, {"date": "2019-06-14", "spx": 2886.98, "pct": 37.58}, {"date": "2019-06-21", "spx": 2950.46, "pct": 36.25}, {"date": "2019-06-28", "spx": 2941.76, "pct": 36.58}, {"date": "2019-07-05", "spx": 2990.41, "pct": 34.49}, {"date": "2019-07-12", "spx": 3013.77, "pct": 31.89}, {"date": "2019-07-19", "spx": 2976.61, "pct": 33.74}, {"date": "2019-07-26", "spx": 3025.86, "pct": 31.16}, {"date": "2019-08-02", "spx": 2932.05, "pct": 40.45}, {"date": "2019-08-09", "spx": 2918.65, "pct": 40.43}, {"date": "2019-08-16", "spx": 2888.68, "pct": 39.79}, {"date": "2019-08-23", "spx": 2847.11, "pct": 43.64}, {"date": "2019-08-30", "spx": 2926.46, "pct": 42.23}, {"date": "2019-09-06", "spx": 2978.71, "pct": 39.17}, {"date": "2019-09-13", "spx": 3007.39, "pct": 37.73}, {"date": "2019-09-20", "spx": 2992.07, "pct": 37.92}, {"date": "2019-09-27", "spx": 2961.79, "pct": 39.54}, {"date": "2019-10-04", "spx": 2952.01, "pct": 39.66}, {"date": "2019-10-11", "spx": 2970.27, "pct": 36.36}, {"date": "2019-10-18", "spx": 2986.2, "pct": 36.28}, {"date": "2019-10-25", "spx": 3022.55, "pct": 33.28}, {"date": "2019-11-01", "spx": 3066.91, "pct": 33.79}, {"date": "2019-11-08", "spx": 3093.08, "pct": 33.23}, {"date": "2019-11-15", "spx": 3120.46, "pct": 29.62}, {"date": "2019-11-22", "spx": 3110.29, "pct": 33.65}, {"date": "2019-11-29", "spx": 3140.98, "pct": 33.29}, {"date": "2019-12-06", "spx": 3145.91, "pct": 32.96}, {"date": "2019-12-13", "spx": 3168.8, "pct": 29.13}, {"date": "2019-12-20", "spx": 3221.22, "pct": 27.73}, {"date": "2019-12-27", "spx": 3240.02, "pct": 25.5}, {"date": "2020-01-03", "spx": 3234.85, "pct": 29.35}, {"date": "2020-01-10", "spx": 3265.35, "pct": 26.69}, {"date": "2020-01-17", "spx": 3329.62, "pct": 26.13}, {"date": "2020-01-24", "spx": 3295.47, "pct": 23.87}, {"date": "2020-01-31", "spx": 3225.52, "pct": 31.68}, {"date": "2020-02-07", "spx": 3327.71, "pct": 30.09}, {"date": "2020-02-14", "spx": 3380.16, "pct": 23.12}, {"date": "2020-02-21", "spx": 3337.75, "pct": 25.34}, {"date": "2020-02-28", "spx": 2954.22, "pct": 48.57}, {"date": "2020-03-06", "spx": 2972.37, "pct": 43.58}, {"date": "2020-03-13", "spx": 2711.02, "pct": 47.52}, {"date": "2020-03-20", "spx": 2304.92, "pct": 57.65}, {"date": "2020-03-27", "spx": 2541.47, "pct": 47.9}, {"date": "2020-04-03", "spx": 2488.65, "pct": 56.84}, {"date": "2020-04-10", "spx": 2789.82, "pct": 43.74}, {"date": "2020-04-17", "spx": 2874.56, "pct": 37.88}, {"date": "2020-04-24", "spx": 2836.74, "pct": 40.95}, {"date": "2020-05-01", "spx": 2830.71, "pct": 41.12}, {"date": "2020-05-08", "spx": 2929.8, "pct": 37.43}, {"date": "2020-05-15", "spx": 2863.7, "pct": 40.74}, {"date": "2020-05-22", "spx": 2955.45, "pct": 36.0}, {"date": "2020-05-29", "spx": 3044.31, "pct": 35.56}, {"date": "2020-06-05", "spx": 3193.93, "pct": 32.12}, {"date": "2020-06-12", "spx": 3041.31, "pct": 37.2}, {"date": "2020-06-19", "spx": 3097.74, "pct": 33.74}, {"date": "2020-06-26", "spx": 3009.05, "pct": 37.63}, {"date": "2020-07-03", "spx": 3130.01, "pct": 33.06}, {"date": "2020-07-10", "spx": 3185.04, "pct": 30.51}, {"date": "2020-07-17", "spx": 3224.73, "pct": 29.66}, {"date": "2020-07-24", "spx": 3215.63, "pct": 29.31}, {"date": "2020-07-31", "spx": 3271.12, "pct": 24.07}, {"date": "2020-08-07", "spx": 3351.28, "pct": 24.25}, {"date": "2020-08-14", "spx": 3372.85, "pct": 22.57}, {"date": "2020-08-21", "spx": 3397.16, "pct": 25.99}, {"date": "2020-08-28", "spx": 3508.01, "pct": 22.93}, {"date": "2020-09-04", "spx": 3426.96, "pct": 35.17}, {"date": "2020-09-11", "spx": 3340.97, "pct": 36.14}, {"date": "2020-09-18", "spx": 3319.47, "pct": 34.36}, {"date": "2020-09-25", "spx": 3298.46, "pct": 36.26}, {"date": "2020-10-02", "spx": 3348.42, "pct": 33.31}, {"date": "2020-10-09", "spx": 3477.14, "pct": 26.97}, {"date": "2020-10-16", "spx": 3483.81, "pct": 26.41}, {"date": "2020-10-23", "spx": 3465.39, "pct": 28.49}, {"date": "2020-10-30", "spx": 3269.96, "pct": 37.04}, {"date": "2020-11-06", "spx": 3509.44, "pct": 30.64}, {"date": "2020-11-13", "spx": 3585.15, "pct": 29.27}, {"date": "2020-11-20", "spx": 3557.54, "pct": 26.35}, {"date": "2020-11-27", "spx": 3638.35, "pct": 24.0}, {"date": "2020-12-04", "spx": 3699.12, "pct": 22.23}, {"date": "2020-12-11", "spx": 3663.46, "pct": 23.99}, {"date": "2020-12-18", "spx": 3709.41, "pct": 20.27}, {"date": "2020-12-25", "spx": 3703.06, "pct": 22.36}, {"date": "2021-01-01", "spx": 3756.07, "pct": 24.24}, {"date": "2021-01-08", "spx": 3824.68, "pct": 24.94}, {"date": "2021-01-15", "spx": 3768.25, "pct": 26.32}, {"date": "2021-01-22", "spx": 3841.47, "pct": 23.61}, {"date": "2021-01-29", "spx": 3714.24, "pct": 33.72}, {"date": "2021-02-05", "spx": 3886.83, "pct": 27.53}, {"date": "2021-02-12", "spx": 3934.83, "pct": 24.74}, {"date": "2021-02-19", "spx": 3906.71, "pct": 26.67}, {"date": "2021-02-26", "spx": 3811.15, "pct": 34.58}, {"date": "2021-03-05", "spx": 3841.94, "pct": 34.76}, {"date": "2021-03-12", "spx": 3943.34, "pct": 30.66}, {"date": "2021-03-19", "spx": 3913.1, "pct": 27.97}, {"date": "2021-03-26", "spx": 3974.54, "pct": 26.75}, {"date": "2021-04-02", "spx": 4019.87, "pct": 21.94}, {"date": "2021-04-09", "spx": 4128.8, "pct": 20.43}, {"date": "2021-04-16", "spx": 4185.47, "pct": 20.23}, {"date": "2021-04-23", "spx": 4180.17, "pct": 22.94}, {"date": "2021-04-30", "spx": 4181.17, "pct": 21.38}, {"date": "2021-05-07", "spx": 4232.6, "pct": 21.84}, {"date": "2021-05-14", "spx": 4173.85, "pct": 25.36}, {"date": "2021-05-21", "spx": 4155.86, "pct": 23.88}, {"date": "2021-05-28", "spx": 4204.11, "pct": 23.41}, {"date": "2021-06-04", "spx": 4229.89, "pct": 23.41}, {"date": "2021-06-11", "spx": 4247.44, "pct": 22.84}, {"date": "2021-06-18", "spx": 4166.45, "pct": 22.29}, {"date": "2021-06-25", "spx": 4280.7, "pct": 21.23}, {"date": "2021-07-02", "spx": 4352.34, "pct": 17.24}, {"date": "2021-07-09", "spx": 4369.55, "pct": 21.89}, {"date": "2021-07-16", "spx": 4327.16, "pct": 20.74}, {"date": "2021-07-23", "spx": 4411.79, "pct": 19.41}, {"date": "2021-07-30", "spx": 4395.26, "pct": 19.14}, {"date": "2021-08-06", "spx": 4436.52, "pct": 18.28}, {"date": "2021-08-13", "spx": 4468.0, "pct": 17.63}, {"date": "2021-08-20", "spx": 4441.67, "pct": 19.64}, {"date": "2021-08-27", "spx": 4509.37, "pct": 18.9}, {"date": "2021-09-03", "spx": 4535.43, "pct": 16.28}, {"date": "2021-09-10", "spx": 4458.58, "pct": 17.56}, {"date": "2021-09-17", "spx": 4432.99, "pct": 19.73}, {"date": "2021-09-24", "spx": 4455.48, "pct": 19.38}, {"date": "2021-10-01", "spx": 4357.04, "pct": 18.68}, {"date": "2021-10-08", "spx": 4391.34, "pct": 19.73}, {"date": "2021-10-15", "spx": 4471.37, "pct": 19.69}, {"date": "2021-10-22", "spx": 4544.9, "pct": 17.6}, {"date": "2021-10-29", "spx": 4605.38, "pct": 16.21}, {"date": "2021-11-05", "spx": 4697.53, "pct": 13.49}, {"date": "2021-11-12", "spx": 4682.85, "pct": 15.1}, {"date": "2021-11-19", "spx": 4697.96, "pct": 13.2}, {"date": "2021-11-26", "spx": 4594.62, "pct": 15.42}, {"date": "2021-12-03", "spx": 4538.43, "pct": 16.29}, {"date": "2021-12-10", "spx": 4712.02, "pct": 14.7}, {"date": "2021-12-17", "spx": 4620.64, "pct": 18.33}, {"date": "2021-12-24", "spx": 4725.79, "pct": 14.77}, {"date": "2021-12-31", "spx": 4766.18, "pct": 14.69}, {"date": "2022-01-07", "spx": 4677.03, "pct": 17.32}, {"date": "2022-01-14", "spx": 4662.85, "pct": 20.36}, {"date": "2022-01-21", "spx": 4397.94, "pct": 33.75}, {"date": "2022-01-28", "spx": 4431.85, "pct": 29.73}, {"date": "2022-02-04", "spx": 4500.53, "pct": 34.54}, {"date": "2022-02-11", "spx": 4418.64, "pct": 39.53}, {"date": "2022-02-18", "spx": 4348.87, "pct": 43.51}, {"date": "2022-02-25", "spx": 4384.65, "pct": 38.59}, {"date": "2022-03-04", "spx": 4328.87, "pct": 41.66}, {"date": "2022-03-11", "spx": 4204.31, "pct": 44.38}, {"date": "2022-03-18", "spx": 4463.12, "pct": 35.12}, {"date": "2022-03-25", "spx": 4543.06, "pct": 34.88}, {"date": "2022-04-01", "spx": 4545.86, "pct": 33.66}, {"date": "2022-04-08", "spx": 4488.28, "pct": 35.91}, {"date": "2022-04-15", "spx": 4392.59, "pct": 40.62}, {"date": "2022-04-22", "spx": 4271.78, "pct": 45.47}, {"date": "2022-04-29", "spx": 4131.93, "pct": 48.74}, {"date": "2022-05-06", "spx": 4123.34, "pct": 50.44}, {"date": "2022-05-13", "spx": 4023.89, "pct": 50.26}, {"date": "2022-05-20", "spx": 3901.36, "pct": 57.23}, {"date": "2022-05-27", "spx": 4158.24, "pct": 44.94}, {"date": "2022-06-03", "spx": 4108.54, "pct": 47.95}, {"date": "2022-06-10", "spx": 3900.86, "pct": 57.83}, {"date": "2022-06-17", "spx": 3674.84, "pct": 59.94}, {"date": "2022-06-24", "spx": 3911.74, "pct": 48.28}, {"date": "2022-07-01", "spx": 3825.33, "pct": 54.41}, {"date": "2022-07-08", "spx": 3899.38, "pct": 47.93}, {"date": "2022-07-15", "spx": 3863.16, "pct": 54.95}, {"date": "2022-07-22", "spx": 3961.63, "pct": 49.41}, {"date": "2022-07-29", "spx": 4130.29, "pct": 45.3}, {"date": "2022-08-05", "spx": 4145.19, "pct": 46.49}, {"date": "2022-08-12", "spx": 4280.15, "pct": 43.29}, {"date": "2022-08-19", "spx": 4228.48, "pct": 47.54}, {"date": "2022-08-26", "spx": 4057.66, "pct": 52.77}, {"date": "2022-09-02", "spx": 3924.26, "pct": 56.71}, {"date": "2022-09-09", "spx": 4067.36, "pct": 49.47}, {"date": "2022-09-16", "spx": 3873.33, "pct": 60.76}, {"date": "2022-09-23", "spx": 3693.23, "pct": 61.08}, {"date": "2022-09-30", "spx": 3585.62, "pct": 61.28}, {"date": "2022-10-07", "spx": 3639.66, "pct": 59.75}, {"date": "2022-10-14", "spx": 3583.07, "pct": 62.65}, {"date": "2022-10-21", "spx": 3752.75, "pct": 53.51}, {"date": "2022-10-28", "spx": 3901.06, "pct": 50.28}, {"date": "2022-11-04", "spx": 3770.55, "pct": 57.27}, {"date": "2022-11-11", "spx": 3992.93, "pct": 44.59}, {"date": "2022-11-18", "spx": 3965.34, "pct": 49.05}, {"date": "2022-11-25", "spx": 4026.12, "pct": 46.65}, {"date": "2022-12-02", "spx": 4071.7, "pct": 45.7}, {"date": "2022-12-09", "spx": 3934.38, "pct": 52.93}, {"date": "2022-12-16", "spx": 3852.36, "pct": 54.76}, {"date": "2022-12-23", "spx": 3844.82, "pct": 56.0}, {"date": "2022-12-30", "spx": 3839.5, "pct": 56.85}, {"date": "2023-01-06", "spx": 3895.08, "pct": 53.97}, {"date": "2023-01-13", "spx": 3999.09, "pct": 50.76}, {"date": "2023-01-20", "spx": 3972.61, "pct": 53.71}, {"date": "2023-01-27", "spx": 4070.56, "pct": 46.58}, {"date": "2023-02-03", "spx": 4136.48, "pct": 45.73}, {"date": "2023-02-10", "spx": 4090.46, "pct": 49.67}, {"date": "2023-02-17", "spx": 4079.09, "pct": 48.86}, {"date": "2023-02-24", "spx": 3970.04, "pct": 52.83}, {"date": "2023-03-03", "spx": 4045.64, "pct": 49.08}, {"date": "2023-03-10", "spx": 3861.59, "pct": 56.28}, {"date": "2023-03-17", "spx": 3916.64, "pct": 49.86}, {"date": "2023-03-24", "spx": 3970.99, "pct": 48.5}, {"date": "2023-03-31", "spx": 4109.31, "pct": 44.09}, {"date": "2023-04-07", "spx": 4105.02, "pct": 47.16}, {"date": "2023-04-14", "spx": 4137.64, "pct": 46.26}, {"date": "2023-04-21", "spx": 4133.52, "pct": 48.44}, {"date": "2023-04-28", "spx": 4169.48, "pct": 47.76}, {"date": "2023-05-05", "spx": 4136.25, "pct": 48.93}, {"date": "2023-05-12", "spx": 4124.08, "pct": 47.63}, {"date": "2023-05-19", "spx": 4191.98, "pct": 45.25}, {"date": "2023-05-26", "spx": 4205.45, "pct": 38.84}, {"date": "2023-06-02", "spx": 4282.37, "pct": 37.14}, {"date": "2023-06-09", "spx": 4298.86, "pct": 38.63}, {"date": "2023-06-16", "spx": 4409.59, "pct": 33.76}, {"date": "2023-06-23", "spx": 4348.33, "pct": 37.73}, {"date": "2023-06-30", "spx": 4450.38, "pct": 32.71}, {"date": "2023-07-07", "spx": 4398.95, "pct": 34.21}, {"date": "2023-07-14", "spx": 4505.42, "pct": 31.37}, {"date": "2023-07-21", "spx": 4536.34, "pct": 32.97}, {"date": "2023-07-28", "spx": 4582.23, "pct": 31.52}, {"date": "2023-08-04", "spx": 4478.03, "pct": 36.8}, {"date": "2023-08-11", "spx": 4464.05, "pct": 38.78}, {"date": "2023-08-18", "spx": 4369.71, "pct": 43.56}, {"date": "2023-08-25", "spx": 4405.71, "pct": 40.53}, {"date": "2023-09-01", "spx": 4515.77, "pct": 35.75}, {"date": "2023-09-08", "spx": 4457.49, "pct": 40.45}, {"date": "2023-09-15", "spx": 4450.32, "pct": 38.72}, {"date": "2023-09-22", "spx": 4320.06, "pct": 42.45}, {"date": "2023-09-29", "spx": 4288.05, "pct": 39.88}, {"date": "2023-10-06", "spx": 4308.5, "pct": 37.82}, {"date": "2023-10-13", "spx": 4327.78, "pct": 37.6}, {"date": "2023-10-20", "spx": 4224.16, "pct": 41.02}, {"date": "2023-10-27", "spx": 4117.37, "pct": 43.08}, {"date": "2023-11-03", "spx": 4358.34, "pct": 34.3}, {"date": "2023-11-10", "spx": 4415.24, "pct": 34.54}, {"date": "2023-11-17", "spx": 4514.02, "pct": 32.54}, {"date": "2023-11-24", "spx": 4559.34, "pct": 31.01}, {"date": "2023-12-01", "spx": 4594.63, "pct": 32.26}, {"date": "2023-12-08", "spx": 4604.37, "pct": 30.67}, {"date": "2023-12-15", "spx": 4719.19, "pct": 26.4}, {"date": "2023-12-22", "spx": 4754.63, "pct": 28.92}, {"date": "2023-12-29", "spx": 4769.83, "pct": 29.16}, {"date": "2024-01-05", "spx": 4697.24, "pct": 31.84}, {"date": "2024-01-12", "spx": 4783.83, "pct": 28.67}, {"date": "2024-01-19", "spx": 4839.81, "pct": 26.4}, {"date": "2024-01-26", "spx": 4890.97, "pct": 24.7}, {"date": "2024-02-02", "spx": 4958.61, "pct": 26.88}, {"date": "2024-02-09", "spx": 5026.61, "pct": 23.64}, {"date": "2024-02-16", "spx": 5005.57, "pct": 25.33}, {"date": "2024-02-23", "spx": 5088.8, "pct": 23.85}, {"date": "2024-03-01", "spx": 5137.08, "pct": 21.35}, {"date": "2024-03-08", "spx": 5123.69, "pct": 21.25}, {"date": "2024-03-15", "spx": 5117.09, "pct": 24.39}, {"date": "2024-03-22", "spx": 5234.18, "pct": 22.04}, {"date": "2024-03-29", "spx": 5254.35, "pct": 20.73}, {"date": "2024-04-05", "spx": 5204.34, "pct": 25.03}, {"date": "2024-04-12", "spx": 5123.41, "pct": 28.41}, {"date": "2024-04-19", "spx": 4967.23, "pct": 34.14}, {"date": "2024-04-26", "spx": 5099.96, "pct": 27.37}, {"date": "2024-05-03", "spx": 5127.79, "pct": 29.5}, {"date": "2024-05-10", "spx": 5222.68, "pct": 29.06}, {"date": "2024-05-17", "spx": 5303.27, "pct": 26.31}, {"date": "2024-05-24", "spx": 5304.72, "pct": 25.79}, {"date": "2024-05-31", "spx": 5277.51, "pct": 28.22}, {"date": "2024-06-07", "spx": 5346.99, "pct": 27.37}, {"date": "2024-06-14", "spx": 5431.6, "pct": 23.24}, {"date": "2024-06-21", "spx": 5464.62, "pct": 23.8}, {"date": "2024-06-28", "spx": 5460.48, "pct": 24.44}, {"date": "2024-07-05", "spx": 5567.19, "pct": 22.91}, {"date": "2024-07-12", "spx": 5615.35, "pct": 20.37}, {"date": "2024-07-19", "spx": 5505.0, "pct": 26.0}, {"date": "2024-07-26", "spx": 5459.1, "pct": 26.05}, {"date": "2024-08-02", "spx": 5346.56, "pct": 30.7}, {"date": "2024-08-09", "spx": 5344.16, "pct": 30.12}, {"date": "2024-08-16", "spx": 5554.25, "pct": 21.96}, {"date": "2024-08-23", "spx": 5634.61, "pct": 21.86}, {"date": "2024-08-30", "spx": 5648.4, "pct": 22.96}, {"date": "2024-09-06", "spx": 5408.42, "pct": 31.88}, {"date": "2024-09-13", "spx": 5626.02, "pct": 27.43}, {"date": "2024-09-20", "spx": 5702.55, "pct": 25.3}, {"date": "2024-09-27", "spx": 5738.17, "pct": 23.14}, {"date": "2024-10-04", "spx": 5751.07, "pct": 26.99}, {"date": "2024-10-11", "spx": 5815.03, "pct": 24.47}, {"date": "2024-10-18", "spx": 5864.67, "pct": 22.6}, {"date": "2024-10-25", "spx": 5808.12, "pct": 26.21}, {"date": "2024-11-01", "spx": 5728.8, "pct": 28.43}, {"date": "2024-11-08", "spx": 5995.54, "pct": 25.95}, {"date": "2024-11-15", "spx": 5870.62, "pct": 31.21}, {"date": "2024-11-22", "spx": 5969.34, "pct": 28.23}, {"date": "2024-11-29", "spx": 6032.38, "pct": 23.78}, {"date": "2024-12-06", "spx": 6090.27, "pct": 24.25}, {"date": "2024-12-13", "spx": 6051.09, "pct": 23.79}, {"date": "2024-12-20", "spx": 5930.85, "pct": 28.72}, {"date": "2024-12-27", "spx": 5970.84, "pct": 25.62}, {"date": "2025-01-03", "spx": 5942.47, "pct": 26.6}, {"date": "2025-01-10", "spx": 5827.04, "pct": 30.06}, {"date": "2025-01-17", "spx": 5996.66, "pct": 26.01}, {"date": "2025-01-24", "spx": 6101.24, "pct": 24.07}, {"date": "2025-01-31", "spx": 6040.53, "pct": 25.97}, {"date": "2025-02-07", "spx": 6025.99, "pct": 29.7}, {"date": "2025-02-14", "spx": 6114.63, "pct": 27.89}, {"date": "2025-02-21", "spx": 6013.13, "pct": 28.54}, {"date": "2025-02-28", "spx": 5954.5, "pct": 31.62}, {"date": "2025-03-07", "spx": 5770.2, "pct": 33.35}, {"date": "2025-03-14", "spx": 5638.94, "pct": 32.09}, {"date": "2025-03-21", "spx": 5667.56, "pct": 32.54}, {"date": "2025-03-28", "spx": 5580.94, "pct": 37.7}, {"date": "2025-04-04", "spx": 5074.08, "pct": 50.43}, {"date": "2025-04-11", "spx": 5363.36, "pct": 33.87}, {"date": "2025-04-18", "spx": 5282.7, "pct": 37.98}, {"date": "2025-04-25", "spx": 5525.21, "pct": 31.3}, {"date": "2025-05-02", "spx": 5686.67, "pct": 31.52}, {"date": "2025-05-09", "spx": 5659.91, "pct": 32.05}, {"date": "2025-05-16", "spx": 5958.38, "pct": 26.55}, {"date": "2025-05-23", "spx": 5802.82, "pct": 33.82}, {"date": "2025-05-30", "spx": 5911.69, "pct": 27.99}, {"date": "2025-06-06", "spx": 6000.36, "pct": 26.32}, {"date": "2025-06-13", "spx": 5976.97, "pct": 26.47}, {"date": "2025-06-20", "spx": 5967.84, "pct": 27.93}, {"date": "2025-06-27", "spx": 6173.07, "pct": 23.39}, {"date": "2025-07-04", "spx": 6279.35, "pct": 21.73}, {"date": "2025-07-11", "spx": 6259.75, "pct": 22.83}, {"date": "2025-07-18", "spx": 6296.79, "pct": 24.29}, {"date": "2025-07-25", "spx": 6388.64, "pct": 24.96}, {"date": "2025-08-01", "spx": 6238.01, "pct": 27.01}, {"date": "2025-08-08", "spx": 6389.45, "pct": 25.47}, {"date": "2025-08-15", "spx": 6449.8, "pct": 25.15}, {"date": "2025-08-22", "spx": 6466.91, "pct": 26.65}, {"date": "2025-08-29", "spx": 6460.26, "pct": 23.62}, {"date": "2025-09-05", "spx": 6481.5, "pct": 22.66}, {"date": "2025-09-12", "spx": 6584.29, "pct": 22.28}, {"date": "2025-09-19", "spx": 6664.36, "pct": 23.64}, {"date": "2025-09-26", "spx": 6643.7, "pct": 24.5}, {"date": "2025-10-03", "spx": 6715.79, "pct": 25.7}, {"date": "2025-10-10", "spx": 6552.51, "pct": 27.09}, {"date": "2025-10-17", "spx": 6664.01, "pct": 27.38}, {"date": "2025-10-24", "spx": 6791.69, "pct": 24.54}, {"date": "2025-10-31", "spx": 6840.2, "pct": 22.91}, {"date": "2025-11-07", "spx": 6728.8, "pct": 25.96}, {"date": "2025-11-14", "spx": 6734.11, "pct": 24.58}, {"date": "2025-11-21", "spx": 6602.99, "pct": 29.93}, {"date": "2025-11-28", "spx": 6849.09, "pct": 32.82}, {"date": "2025-12-05", "spx": 6870.4, "pct": 28.47}, {"date": "2025-12-12", "spx": 6827.41, "pct": 32.38}, {"date": "2025-12-19", "spx": 6834.5, "pct": 31.1}, {"date": "2025-12-26", "spx": 6929.94, "pct": 27.83}, {"date": "2026-01-02", "spx": 6858.47, "pct": 27.62}, {"date": "2026-01-09", "spx": 6966.28, "pct": 28.4}, {"date": "2026-01-16", "spx": 6940.01, "pct": 29.88}, {"date": "2026-01-23", "spx": 6915.61, "pct": 29.95}, {"date": "2026-01-30", "spx": 6939.03, "pct": 34.88}, {"date": "2026-02-06", "spx": 6932.3, "pct": 31.65}, {"date": "2026-02-13", "spx": 6836.17, "pct": 34.9}, {"date": "2026-02-20", "spx": 6909.51, "pct": 35.35}, {"date": "2026-02-27", "spx": 6878.88, "pct": 35.05}, {"date": "2026-03-06", "spx": 6740.02, "pct": 40.99}, {"date": "2026-03-13", "spx": 6632.19, "pct": 40.87}, {"date": "2026-03-20", "spx": 6506.48, "pct": 42.45}, {"date": "2026-03-27", "spx": 6368.85, "pct": 45.28}, {"date": "2026-04-03", "spx": 6582.69, "pct": 39.8}, {"date": "2026-04-10", "spx": 6816.89, "pct": 31.42}, {"date": "2026-04-17", "spx": 7126.06, "pct": 29.18}, {"date": "2026-04-24", "spx": 7165.08, "pct": 27.24}, {"date": "2026-05-01", "spx": 7230.12, "pct": 23.61}, {"date": "2026-05-08", "spx": 7398.93, "pct": 22.73}, {"date": "2026-05-15", "spx": 7408.5, "pct": 24.27}, {"date": "2026-05-22", "spx": 7473.47, "pct": 23.65}, {"date": "2026-05-29", "spx": 7580.06, "pct": 18.71}, {"date": "2026-06-05", "spx": 7383.74, "pct": 23.95}, {"date": "2026-06-12", "spx": 7431.46, "pct": 22.46}, {"date": "2026-06-19", "spx": 7500.58, "pct": 18.89}, {"date": "2026-06-26", "spx": 7354.02, "pct": 22.91}, {"date": "2026-07-03", "spx": 7483.24, "pct": 20.49}, {"date": "2026-07-10", "spx": 7575.39, "pct": 19.22}, {"date": "2026-07-17", "spx": 7457.69, "pct": 20.18}, {"date": "2026-07-24", "spx": 7411.98, "pct": 21.63}, {"date": "2026-07-31", "spx": 7489.72, "pct": 17.47}, {"date": "2026-08-07", "spx": 7757.64, "pct": 20.55}, {"date": "2026-08-14", "spx": 7785.76, "pct": 16.99}];
+
+/* ════════ CONFIG ════════ */
+const SHORTS=['SH','SDS','SPXU','SPXS','PSQ','SQQQ','SDOW','TZA'];
+const LONGS =['SSO','UPRO','SPXL','QLD','TQQQ','UDOW','TNA','SOXL'];
+const SPX='^GSPC';
+const THRESHOLDS=[42,50,60], SIG=42, ZW=52;
+const CAP=42, COMPLACENT=28;
+const AUTO_MS=15*60*1000;
+
+/* ════════ STATE ════════ */
+let rows=[], bars=9999, useMA=false, zMode=false;
+let topC=null, botC=null, dataMode='snapshot';
+let autoOn=false, autoTimer=null, lastOk=null, serverUpdated=null;
+
+/* ════════ STATUS ════════ */
+function setPill(state, txt){
+  const p=document.getElementById('pill');
+  p.className='pill '+state;
+  document.getElementById('pillTxt').textContent=txt;
+}
+function setAsof(){
+  const el=document.getElementById('asof');
+  if(!rows.length){el.textContent='';return;}
+  let s='Latest week: '+rows[rows.length-1].date;
+  if(dataMode==='live'){
+    if(serverUpdated) s+=' · data refreshed '+serverUpdated;
+    if(autoOn && lastOk){
+      const m=Math.max(0,Math.ceil((AUTO_MS-(Date.now()-lastOk))/60000));
+      s+=' · next reload ~'+m+'m';
+    }
+  }
+  el.textContent=s;
+}
+
+/* ════════ PREP ════════ */
+function prepare(raw){
+  const out=raw.map(r=>({...r}));
+  for(let i=0;i<out.length;i++){
+    const w=out.slice(Math.max(0,i-ZW+1),i+1).map(r=>r.pct);
+    if(w.length<26){out[i].z=null;continue;}
+    const mu=w.reduce((a,b)=>a+b,0)/w.length;
+    const sd=Math.sqrt(w.reduce((a,b)=>a+(b-mu)**2,0)/w.length)||1;
+    out[i].z=(out[i].pct-mu)/sd;
+  }
+  out.forEach(r=>r.signal=r.pct>=SIG);
+  return out;
+}
+
+/* ════════ DATA LOADER ════════
+   Reads data.json from the same origin. That file is refreshed server-side
+   by a scheduled GitHub Action (fetch_data.py), so there's no browser-side
+   market fetch, no CORS, no proxies — just a plain same-origin fetch that
+   can't be blocked. Falls back to the embedded snapshot if data.json is
+   missing (e.g. opened as a local file:// instead of via Pages). */
+async function loadLive(){
+  setPill('load','Refreshing');
+  try{
+    const r=await fetch('./data.json?t='+Date.now(),{cache:'no-store'});
+    if(!r.ok) throw new Error('HTTP '+r.status);
+    const j=await r.json();
+    const series=Array.isArray(j)?j:j.data;
+    if(!series||series.length<50) throw new Error('data.json malformed');
+    rows=prepare(series); dataMode='live'; lastOk=Date.now();
+    serverUpdated=(j&&j.last_updated)?j.last_updated:null;
+    setPill('live','Live');
+    drawAll();
+    return true;
+  }catch(e){
+    setPill('snap','Baked data');
+    setAsof();
+    return false;
+  }
+}
+
+/* ════════ BACKTEST ════════ */
+function fwd(i,w){ return i+w>=rows.length?null:(rows[i+w].spx/rows[i].spx-1)*100; }
+function med(a){ if(!a.length)return null; const s=[...a].sort((x,y)=>x-y),m=s.length>>1; return s.length%2?s[m]:(s[m-1]+s[m])/2; }
+function win(a){ return a.length?a.filter(v=>v>0).length/a.length*100:null; }
+function runBacktest(){
+  const H=[4,12,26], allIdx=rows.map((_,i)=>i);
+  const entries=thr=>{const x=[];rows.forEach((r,i)=>{if(r.pct>=thr&&(rows[i-1]?.pct??0)<thr)x.push(i);});return x;};
+  const row=(lab,idx,cls)=>{
+    let s=`<tr class="${cls}"><td>${lab}</td><td>${idx.length}</td>`;
+    H.forEach(h=>{const rr=idx.map(i=>fwd(i,h)).filter(v=>v!=null);const m=med(rr),w=win(rr);
+      const c=m==null?'':(m>=0?'pos':'neg');
+      s+=`<td class="${c}">${m==null?'\u2014':(m>=0?'+':'')+m.toFixed(1)+'%'}</td><td>${w==null?'\u2014':w.toFixed(0)+'%'}</td>`;});
+    return s+'</tr>';
+  };
+  let h='<tr><th>Signal threshold</th><th>N</th>'+H.map(x=>`<th>Med +${x}w</th><th>Win +${x}w</th>`).join('')+'</tr>';
+  const cm={42:'t42',50:'t50',60:'t60'};
+  THRESHOLDS.forEach(t=>h+=row(`% Short \u2265 ${t}%`,entries(t),cm[t]));
+  h+=row('All weeks (baseline)',allIdx,'base');
+  document.getElementById('btTable').innerHTML=h;
+  document.getElementById('btNote').textContent=
+    `Forward S&P 500 returns from the Friday close of each first-trigger week (clusters counted once). `+
+    `${rows[0].date} \u2192 ${rows[rows.length-1].date}, ${dataMode==='live'?'live':'baked'} data. Past performance \u2260 future results.`;
+}
+
+/* ════════ HERO + GAUGE (signature) ════════ */
+function pctileOf(v){ const s=rows.map(r=>r.pct).sort((a,b)=>a-b); return Math.round(s.filter(x=>x<=v).length/s.length*100); }
+function updateHero(){
+  const last=rows[rows.length-1];
+  document.getElementById('bigPct').innerHTML=last.pct.toFixed(0)+'<span class="pc">%</span>';
+  const pt=pctileOf(last.pct);
+  const reg=document.getElementById('regime');
+  if(last.pct>=CAP){reg.className='regime cap';reg.textContent='\u25B2 Capitulation zone';}
+  else if(last.pct<=COMPLACENT){reg.className='regime com';reg.textContent='\u25BC Complacency';}
+  else{reg.className='regime neu';reg.textContent='\u25A0 Neutral';}
+  document.getElementById('heroMeta').innerHTML=
+    `<b>${pt}th percentile</b> of the 10-year range. `+
+    (last.pct>=CAP?'Crowded short positioning \u2014 contrarian-bullish backdrop.'
+      :last.pct<=COMPLACENT?'Shorts have left \u2014 little fear in the tape.'
+      :'Positioning is mid-range; no extreme to fade.');
+  document.getElementById('gaugeH').textContent=
+    `range ${Math.min(...rows.map(r=>r.pct)).toFixed(0)}\u2013${Math.max(...rows.map(r=>r.pct)).toFixed(0)}%`;
+  drawGauge(last.pct);
+}
+function drawGauge(cur){
+  const svg=document.getElementById('gaugeSvg');
+  const W=700,H=132, padL=30,padR=30, trackY=78, trackH=26;
+  const lo=18, hi=60;  // domain
+  const x=v=>padL+(v-lo)/(hi-lo)*(W-padL-padR);
+  const seg=(a,b,fill,stroke)=>`<rect x="${x(a)}" y="${trackY}" width="${x(b)-x(a)}" height="${trackH}" fill="${fill}" stroke="${stroke}" stroke-width="1"/>`;
+  // histogram of distribution (10 bins) above the track
+  const bins=new Array(21).fill(0);
+  rows.forEach(r=>{const b=Math.max(0,Math.min(20,Math.floor((r.pct-lo)/(hi-lo)*21)));bins[b]++;});
+  const bmax=Math.max(...bins);
+  let hist='';
+  for(let i=0;i<21;i++){
+    const bx0=x(lo+(i/21)*(hi-lo)), bx1=x(lo+((i+1)/21)*(hi-lo));
+    const bh=bins[i]/bmax*40; if(bh<=0)continue;
+    hist+=`<rect x="${bx0+0.5}" y="${trackY-6-bh}" width="${bx1-bx0-1}" height="${bh}" fill="#d7e3df"/>`;
+  }
+  // zone bands
+  let bands=seg(lo,COMPLACENT,'#f6efe0','#e6d3a8')
+           +seg(COMPLACENT,CAP,'#edeef0','#d9d5cc')
+           +seg(CAP,hi,'#e7f2ec','#bfe0cf');
+  // threshold ticks
+  const tick=(v,col,lab)=>`<line x1="${x(v)}" y1="${trackY-2}" x2="${x(v)}" y2="${trackY+trackH+2}" stroke="${col}" stroke-width="1.5" stroke-dasharray="3 2"/>
+    <text x="${x(v)}" y="${trackY+trackH+16}" font-size="10" font-weight="700" fill="${col}" text-anchor="middle">${lab}</text>`;
+  const ticks=tick(42,'#16835a','42')+tick(50,'#b07410','50')+tick(60,'#a8362b','60');
+  // axis labels
+  let axis='';
+  [20,30,40,50,60].forEach(v=>{axis+=`<text x="${x(v)}" y="${trackY-46}" font-size="9.5" fill="#8a909a" text-anchor="middle">${v}%</text>`;});
+  // current marker
+  const cx=x(cur);
+  const col=cur>=CAP?'#16835a':cur<=COMPLACENT?'#b07410':'#12171f';
+  const marker=`<polygon points="${cx-7},${trackY-12} ${cx+7},${trackY-12} ${cx},${trackY-2}" fill="${col}"/>
+    <line x1="${cx}" y1="${trackY-2}" x2="${cx}" y2="${trackY+trackH+2}" stroke="${col}" stroke-width="2.5"/>
+    <rect x="${Math.min(W-58,Math.max(padL,cx-26))}" y="${trackY+trackH+22}" width="52" height="20" rx="2" fill="${col}"/>
+    <text x="${Math.min(W-32,Math.max(padL+26,cx))}" y="${trackY+trackH+36}" font-size="12" font-weight="800" fill="#fff" text-anchor="middle">${cur.toFixed(1)}%</text>`;
+  svg.innerHTML=hist+bands+ticks+axis+marker;
+}
+
+/* ════════ CHART PLUMBING ════════ */
+function wma(a,n){return a.map((_,i)=>{if(i<n-1)return null;let s=0;for(let k=0;k<n;k++)s+=(a[i-k]??0);return s/n;});}
+function monthCb(dates){
+  const MN=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'],sp=dates.length;
+  return function(v,idx){const d=dates[idx];if(!d)return'';if(idx>0&&dates[idx-1]?.slice(0,7)===d.slice(0,7))return null;
+    const mo=+d.slice(5,7);if(sp>180&&mo!==1&&mo!==7)return null;
+    const m=MN[mo-1];return mo===1||idx===0?m+" '"+d.slice(2,4):m;};
+}
+const xhair={id:'xh',afterDatasetsDraw(ch){const x=ch._cx;if(x==null)return;const{ctx,chartArea:a}=ch;
+  ctx.save();ctx.strokeStyle='rgba(18,23,31,.3)';ctx.setLineDash([3,4]);ctx.lineWidth=1;
+  ctx.beginPath();ctx.moveTo(x,a.top);ctx.lineTo(x,a.bottom);ctx.stroke();ctx.restore();}};
+const refLine={id:'ref',afterDatasetsDraw(ch){
+  if(!ch._isBot)return;const ys=ch.scales.y;if(!ys)return;const{ctx,chartArea:a}=ch;
+  if(ch._zMode){const y=ys.getPixelForValue(1.5);if(y>=a.top&&y<=a.bottom){
+    ctx.save();ctx.strokeStyle='rgba(18,23,31,.45)';ctx.setLineDash([7,4]);ctx.lineWidth=1;
+    ctx.beginPath();ctx.moveTo(a.left,y);ctx.lineTo(a.right,y);ctx.stroke();
+    ctx.setLineDash([]);ctx.fillStyle='rgba(18,23,31,.55)';ctx.font='700 10px Helvetica Neue,Arial';
+    ctx.fillText('+1.5\u03C3',a.left+8,y-5);ctx.restore();}return;}
+  const y42=ys.getPixelForValue(42),y60=ys.getPixelForValue(60);
+  ctx.save();ctx.fillStyle='rgba(22,131,90,.06)';ctx.fillRect(a.left,Math.min(y42,y60),a.right-a.left,Math.abs(y60-y42));
+  [[42,'rgba(22,131,90,.55)','42% \u2014 pullback-stop'],[50,'rgba(176,116,16,.6)','50'],[60,'rgba(168,54,43,.6)','60']].forEach(([lv,c,lab])=>{
+    const y=ys.getPixelForValue(lv);if(y<a.top||y>a.bottom)return;
+    ctx.strokeStyle=c;ctx.setLineDash([7,4]);ctx.lineWidth=1;ctx.beginPath();ctx.moveTo(a.left,y);ctx.lineTo(a.right,y);ctx.stroke();
+    ctx.setLineDash([]);ctx.fillStyle=c;ctx.font='700 10px Helvetica Neue,Arial';ctx.fillText(lab,a.left+8,y-4);});
+  ctx.restore();}};
+function syncMouse(src){
+  ['mousemove','touchmove'].forEach(ev=>src.canvas.addEventListener(ev,e=>{
+    const rect=src.canvas.getBoundingClientRect();const cx=(e.touches?e.touches[0].clientX:e.clientX)-rect.left;
+    [topC,botC].forEach(ch=>{if(!ch)return;const a=ch.chartArea;ch._cx=(cx>=a.left&&cx<=a.right)?cx:null;ch.draw();});
+  },{passive:true}));
+  src.canvas.addEventListener('mouseleave',()=>[topC,botC].forEach(ch=>{if(ch){ch._cx=null;ch.draw();}}));
+}
+function baseOpts(dates,yFmt){
+  return{responsive:true,maintainAspectRatio:false,animation:false,
+    interaction:{mode:'index',intersect:false},
+    plugins:{legend:{display:false},
+      tooltip:{backgroundColor:'#12171f',padding:10,titleFont:{weight:'700',size:11},bodyFont:{size:11},
+        filter:i=>i.datasetIndex===0||i.dataset._isSig,callbacks:{title:it=>it.length?dates[it[0].dataIndex]:''}}},
+    scales:{
+      x:{grid:{color:'#ece9e1',drawTicks:false},ticks:{color:'#5a6472',font:{size:10},maxRotation:0,autoSkip:false,callback:monthCb(dates)},border:{color:'#c9c4ba'}},
+      y:{position:'left',grid:{color:'#ece9e1'},ticks:{color:'#5a6472',font:{size:10},callback:yFmt},border:{color:'#c9c4ba'}},
+      y2:{position:'right',grid:{drawOnChartArea:false},ticks:{color:'#5a6472',font:{size:10},callback:yFmt},border:{color:'#c9c4ba'}}}};
+}
+function render(){
+  if(!rows.length)return;
+  const n=rows.length, sl=bars>=9999?0:Math.max(0,n-bars), slice=rows.slice(sl);
+  const dates=slice.map(r=>r.date), spxV=slice.map(r=>r.spx);
+  let series=slice.map(r=>zMode?r.z:r.pct); if(useMA)series=wma(series.map(v=>v??0),4);
+  const last=rows[n-1];
+  document.getElementById('lspx').textContent=`S&P 500 \u00B7 ${Math.round(last.spx).toLocaleString()}`;
+  document.getElementById('lpct').textContent=zMode?`Spec Short Z-Score \u00B7 ${last.z?.toFixed(2)??'\u2014'}\u03C3`:`% Spec Short Volume \u00B7 ${last.pct.toFixed(1)}%`;
+  const sigPts=[]; slice.forEach((r,i)=>{const gi=sl+i;if(r.signal&&!(rows[gi-1]?.signal))sigPts.push({x:r.date,y:r.spx});});
+  const topOpts=baseOpts(dates,v=>Math.round(v).toLocaleString());
+  topOpts.plugins.tooltip.callbacks.label=i=>i.dataset._isSig?' \u25CF capitulation signal':' SPX: '+Math.round(i.parsed.y).toLocaleString();
+  const lo=Math.min(...spxV),hi=Math.max(...spxV);
+  topOpts.scales.y.suggestedMin=lo-(hi-lo)*.05;topOpts.scales.y.suggestedMax=hi+(hi-lo)*.04;
+  topOpts.scales.y2.suggestedMin=topOpts.scales.y.suggestedMin;topOpts.scales.y2.suggestedMax=topOpts.scales.y.suggestedMax;
+  const fmt=zMode?(v=>v!=null?v.toFixed(1)+'\u03C3':''):(v=>v!=null?v.toFixed(0)+'%':'');
+  const botOpts=baseOpts(dates,fmt);
+  botOpts.plugins.tooltip.callbacks.label=i=>zMode?' Z: '+i.parsed.y.toFixed(2)+'\u03C3':' % Short: '+i.parsed.y.toFixed(1)+'%';
+  const vals=series.filter(v=>v!=null),loP=Math.min(...vals),hiP=Math.max(...vals);
+  botOpts.scales.y.min=zMode?Math.min(-3,loP-.3):Math.max(13,loP-3);
+  botOpts.scales.y.max=zMode?Math.max(3.5,hiP+.3):Math.min(65,hiP+4);
+  botOpts.scales.y2.min=botOpts.scales.y.min;botOpts.scales.y2.max=botOpts.scales.y.max;
+  if(topC)topC.destroy();if(botC)botC.destroy();
+  topC=new Chart(document.getElementById('cTop'),{type:'line',data:{labels:dates,datasets:[
+    {data:spxV,borderColor:'#5b3b8c',borderWidth:1.7,pointRadius:0,tension:.1,yAxisID:'y'},
+    {type:'scatter',data:sigPts,_isSig:true,borderColor:'#16835a',backgroundColor:'rgba(22,131,90,.9)',pointRadius:4,pointHoverRadius:6,yAxisID:'y',showLine:false},
+    {data:spxV,borderWidth:0,pointRadius:0,yAxisID:'y2',hidden:true}]},options:topOpts,plugins:[xhair]});
+  botC=new Chart(document.getElementById('cBot'),{type:'line',data:{labels:dates,datasets:[
+    {data:series,borderColor:'#0e7c74',borderWidth:1.7,pointRadius:0,tension:.1,yAxisID:'y',spanGaps:true},
+    {data:series,borderWidth:0,pointRadius:0,yAxisID:'y2',hidden:true}]},options:botOpts,plugins:[xhair,refLine]});
+  botC._isBot=true;botC._zMode=zMode;syncMouse(topC);syncMouse(botC);
+}
+
+/* ════════ DATA TABLE ════════ */
+let dtSort={col:'date',dir:'desc'}, dtFilter='', dtVis=true;
+function tableData(){const s=rows.map(r=>r.pct).sort((a,b)=>a-b);
+  return rows.map(r=>({date:r.date,spx:r.spx,pct:r.pct,pctile:Math.round(s.filter(v=>v<=r.pct).length/s.length*100),signal:r.signal}));}
+function renderTable(){
+  if(!rows.length)return; const data=tableData(); const f=dtFilter.toLowerCase();
+  const fil=f?data.filter(r=>r.date.includes(f)||r.pct.toFixed(1).includes(f)||String(r.pctile).includes(f)||(r.signal&&'signal'.includes(f))):data;
+  const dir=dtSort.dir==='asc'?1:-1;
+  fil.sort((a,b)=>{const av=a[dtSort.col]??-Infinity,bv=b[dtSort.col]??-Infinity;return typeof av==='string'?av.localeCompare(bv)*dir:(av-bv)*dir;});
+  document.getElementById('dtBody').innerHTML=fil.map(r=>{
+    const sc=r.signal?`<td class="sig">\u25CF Signal</td>`:`<td style="color:var(--faint)">\u2014</td>`;
+    const pc=r.pct>=42?'hi':r.pct<=28?'lo':'';const tc=r.pctile>=90?'hi':r.pctile<=10?'lo':'';
+    return `<tr><td>${r.date}</td><td>${Math.round(r.spx).toLocaleString()}</td><td class="${pc}">${r.pct.toFixed(1)}%</td><td class="${tc}">${r.pctile}th</td>${sc}</tr>`;
+  }).join('');
+  document.getElementById('dtCount').textContent=`${fil.length.toLocaleString()} of ${data.length.toLocaleString()} rows`+(f?` matching "${dtFilter}"`:'')+` \u00B7 ${data.filter(r=>r.signal).length} signal weeks \u00B7 latest ${rows[rows.length-1].date}`;
+  document.querySelectorAll('#dtTable thead th').forEach(th=>{th.classList.remove('asc','desc');if(th.dataset.col===dtSort.col)th.classList.add(dtSort.dir);});
+}
+document.querySelectorAll('#dtTable thead th').forEach(th=>th.addEventListener('click',()=>{
+  if(dtSort.col===th.dataset.col)dtSort.dir=dtSort.dir==='asc'?'desc':'asc';else{dtSort.col=th.dataset.col;dtSort.dir='desc';}renderTable();}));
+document.getElementById('dtSearch').addEventListener('input',function(){dtFilter=this.value.trim();renderTable();});
+document.getElementById('dtCsv').addEventListener('click',()=>{
+  const data=tableData();const L=['Date,SPX Close,% Short,10yr Percentile,Signal'];
+  data.slice().sort((a,b)=>b.date.localeCompare(a.date)).forEach(r=>L.push([r.date,r.spx.toFixed(2),r.pct.toFixed(2),r.pctile,r.signal?1:0].join(',')));
+  const b=new Blob([L.join('\n')],{type:'text/csv'}),a=document.createElement('a');
+  a.href=URL.createObjectURL(b);a.download=`spec-short-${new Date().toISOString().slice(0,10)}.csv`;a.click();});
+document.getElementById('dtToggle').addEventListener('click',function(){dtVis=!dtVis;
+  document.getElementById('dtWrap').style.display=dtVis?'':'none';this.textContent=dtVis?'Hide':'Show';});
+
+/* ════════ DRAW ALL ════════ */
+function drawAll(){ updateHero(); runBacktest(); render(); renderTable(); setAsof(); checkStaleness(); }
+
+/* ════════ STALENESS GUARD ════════
+   Weekly bars should be no more than ~7-10 days old. If the newest data
+   point is older than that, say so loudly instead of looking current. */
+function checkStaleness(){
+  const bar=document.getElementById('staleBar');
+  if(!rows.length){ bar.style.display='none'; return; }
+  const last=new Date(rows[rows.length-1].date+'T00:00:00Z');
+  const now=new Date();
+  const days=Math.floor((now-last)/86400000);
+  const lastStr=rows[rows.length-1].date;
+
+  // Fresh: newest bar within ~10 days → all good, brief confirmation.
+  if(days<=10){
+    bar.className='stale fresh';
+    bar.innerHTML=`<span class="ico">\u2714</span><span>Up to date \u2014 newest weekly bar is ${lastStr} `+
+      `(${days} day${days===1?'':'s'} ago), sourced ${dataMode==='live'?'live':'from the baked snapshot'}.</span>`;
+    bar.style.display='';
+    return;
+  }
+
+  // Stale: explain why and give the exact fix, depending on data source.
+  const sev = days>21 ? 'bad' : 'warn';
+  const wk = Math.round(days/7);
+  let msg;
+  if(dataMode==='live'){
+    // Live fetch succeeded but the feed itself is behind (rare).
+    msg=`The live feed returned data only through <b>${lastStr}</b> (~${wk} week${wk===1?'':'s'} old). `+
+        `The provider may be lagging \u2014 try <code>\u21BB Reload</code>, or re-bake with <code>rebuild.py</code>.`;
+  } else {
+    // The common case: browser fetch failed, showing baked data.
+    msg=`Showing <b>baked data through ${lastStr}</b> (~${wk} week${wk===1?'':'s'} old). `+
+        `The in-browser refresh couldn't reach a data source \u2014 this is expected for a file opened from disk, `+
+        `since Yahoo blocks direct browser access and the relay proxies are unreliable. `+
+        `<b>To update:</b> run <code>python rebuild.py</code> next to this file, then reopen. `+
+        `For hands-off updating, use the hosted (GitHub Pages) build.`;
+  }
+  bar.className='stale '+sev;
+  bar.innerHTML=`<span class="ico">\u26A0</span><span>${msg}</span>`;
+  bar.style.display='';
+}
+
+/* ════════ AUTO-REFRESH ════════ */
+function startAuto(){autoOn=true;const b=document.getElementById('autoBtn');b.textContent='Auto: on';b.classList.add('on');
+  loadLive();if(autoTimer)clearInterval(autoTimer);
+  autoTimer=setInterval(()=>{if(document.visibilityState==='visible')loadLive();},AUTO_MS);}
+function stopAuto(){autoOn=false;const b=document.getElementById('autoBtn');b.textContent='Auto: off';b.classList.remove('on');
+  if(autoTimer){clearInterval(autoTimer);autoTimer=null;}setAsof();}
+document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible'&&autoOn&&lastOk&&Date.now()-lastOk>AUTO_MS)loadLive();});
+setInterval(setAsof,30000);
+
+/* ════════ CONTROLS ════════ */
+document.querySelectorAll('[data-r]').forEach(b=>b.addEventListener('click',()=>{
+  document.querySelectorAll('[data-r]').forEach(x=>x.classList.remove('on'));b.classList.add('on');bars=+b.dataset.r;render();}));
+document.getElementById('maBtn').addEventListener('click',function(){useMA=!useMA;this.textContent='4-wk avg: '+(useMA?'on':'off');this.classList.toggle('on',useMA);render();});
+document.getElementById('modeBtn').addEventListener('click',function(){zMode=!zMode;this.textContent='View: '+(zMode?'Z-Score':'% Short');this.classList.toggle('on',zMode);render();});
+document.getElementById('reloadBtn').addEventListener('click',loadLive);
+document.getElementById('autoBtn').addEventListener('click',()=>autoOn?stopAuto():startAuto());
+
+/* ════════ BOOT ════════ */
+rows=prepare(SNAPSHOT);   /* instant paint from embedded fallback */
+setPill('snap','Baked data');
+drawAll();
+loadLive();   /* upgrade to server-refreshed data.json */
+</script>
+</body>
+</html>
