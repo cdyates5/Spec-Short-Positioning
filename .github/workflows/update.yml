@@ -2,15 +2,15 @@ name: Update spec-short data
 
 on:
   schedule:
-    # Daily at 22:00 UTC (~after US market close).
-    - cron: "0 22 * * *"
-  workflow_dispatch:        # lets you trigger a run manually from the Actions tab
+    - cron: "0 22 * * *"     # Daily at 22:00 UTC (~after US market close)
+    - cron: "0 23 * * 5"     # Extra Friday run, 23:00 UTC, to catch the weekly close reliably
+  workflow_dispatch:
   push:
     branches: [main]
     paths: ["fetch_data.py", ".github/workflows/update.yml"]
 
 permissions:
-  contents: write           # needed to commit data.json back to the repo
+  contents: write
 
 concurrency:
   group: update-data
@@ -33,9 +33,11 @@ jobs:
         run: pip install -r requirements.txt
 
       - name: Fetch data
+        id: fetch
         run: python fetch_data.py
 
       - name: Commit if changed
+        if: success()
         run: |
           git config user.name  "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
@@ -46,3 +48,12 @@ jobs:
             git commit -m "Update data $(date -u +%Y-%m-%d)"
             git push
           fi
+
+      - name: Summarize failure
+        if: failure()
+        run: |
+          echo "## ❌ Data fetch failed" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "data.json was NOT updated. Check the 'Fetch data' step log above." >> "$GITHUB_STEP_SUMMARY"
+          echo "Most likely cause: Yahoo Finance is blocking this runner (TLS-fingerprint or IP-range block)." >> "$GITHUB_STEP_SUMMARY"
+          echo "See the comment block at the top of fetch_data.py for the current fix." >> "$GITHUB_STEP_SUMMARY"
