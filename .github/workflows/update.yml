@@ -40,25 +40,43 @@ jobs:
         run: |
           git config user.name  "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          # data.json is a fully regenerated artifact each run (not a
+          # hand-edited file), and it's written as minified single-line
+          # JSON — so if the remote moves between checkout and push, a
+          # line-level git merge/rebase will ALWAYS conflict, even when
+          # the two versions differ by nothing more than a timestamp.
+          # Retrying a rebase doesn't help here since the conflict isn't
+          # timing-related, it's structural. So on push failure we skip
+          # merge semantics entirely: re-fetch the freshest data.json we
+          # just generated is already the correct content — we just need
+          # to land it on top of whatever's currently on the remote,
+          # overwriting rather than merging.
+
+          cp data.json /tmp/data.json.fresh
+
           git add data.json
           if git diff --staged --quiet; then
             echo "No data change."
             exit 0
           fi
           git commit -m "Update data $(date -u +%Y-%m-%d)"
-          # Rebase onto whatever's on the remote right now before pushing,
-          # so a near-simultaneous run doesn't cause a rejected push.
+
           for i in 1 2 3 4 5; do
-            git fetch origin main
-            if git rebase origin/main; then
-              if git push origin main; then
-                echo "Pushed successfully."
-                exit 0
-              fi
-            else
-              git rebase --abort || true
+            if git push origin main; then
+              echo "Pushed successfully."
+              exit 0
             fi
-            echo "Push attempt $i failed, retrying in $((i*5))s..."
+            echo "Push attempt $i failed — remote moved. Re-landing freshest data.json on top of it (no merge)..."
+            git fetch origin main
+            git reset --hard origin/main
+            cp /tmp/data.json.fresh data.json
+            git add data.json
+            if git diff --staged --quiet; then
+              echo "Remote already has this data (or newer). Nothing to push."
+              exit 0
+            fi
+            git commit -m "Update data $(date -u +%Y-%m-%d)"
             sleep $((i*5))
           done
           echo "::error::Failed to push data.json after 5 attempts."
@@ -71,4 +89,4 @@ jobs:
           echo "" >> "$GITHUB_STEP_SUMMARY"
           echo "Check the 'Fetch data' and 'Commit if changed' step logs above." >> "$GITHUB_STEP_SUMMARY"
           echo "- If 'Fetch data' failed: Yahoo is likely blocking this runner (TLS-fingerprint/IP block). See the comment at the top of fetch_data.py." >> "$GITHUB_STEP_SUMMARY"
-          echo "- If 'Commit if changed' failed: a concurrent run likely raced the push. This should now auto-retry with rebase; if it still fails after 5 attempts, check for overlapping schedules or manual runs." >> "$GITHUB_STEP_SUMMARY"
+          echo "- If 'Commit if changed' failed after 5 overwrite attempts: something is pushing to main extremely frequently. Check for overlapping manual runs." >> "$GITHUB_STEP_SUMMARY"
