@@ -3,7 +3,6 @@ name: Update spec-short data
 on:
   schedule:
     - cron: "0 22 * * *"     # Daily at 22:00 UTC (~after US market close)
-    - cron: "0 23 * * 5"     # Extra Friday run, 23:00 UTC, to catch the weekly close reliably
   workflow_dispatch:
   push:
     branches: [main]
@@ -44,16 +43,32 @@ jobs:
           git add data.json
           if git diff --staged --quiet; then
             echo "No data change."
-          else
-            git commit -m "Update data $(date -u +%Y-%m-%d)"
-            git push
+            exit 0
           fi
+          git commit -m "Update data $(date -u +%Y-%m-%d)"
+          # Rebase onto whatever's on the remote right now before pushing,
+          # so a near-simultaneous run doesn't cause a rejected push.
+          for i in 1 2 3 4 5; do
+            git fetch origin main
+            if git rebase origin/main; then
+              if git push origin main; then
+                echo "Pushed successfully."
+                exit 0
+              fi
+            else
+              git rebase --abort || true
+            fi
+            echo "Push attempt $i failed, retrying in $((i*5))s..."
+            sleep $((i*5))
+          done
+          echo "::error::Failed to push data.json after 5 attempts."
+          exit 1
 
       - name: Summarize failure
         if: failure()
         run: |
-          echo "## ❌ Data fetch failed" >> "$GITHUB_STEP_SUMMARY"
+          echo "## ❌ Data update failed" >> "$GITHUB_STEP_SUMMARY"
           echo "" >> "$GITHUB_STEP_SUMMARY"
-          echo "data.json was NOT updated. Check the 'Fetch data' step log above." >> "$GITHUB_STEP_SUMMARY"
-          echo "Most likely cause: Yahoo Finance is blocking this runner (TLS-fingerprint or IP-range block)." >> "$GITHUB_STEP_SUMMARY"
-          echo "See the comment block at the top of fetch_data.py for the current fix." >> "$GITHUB_STEP_SUMMARY"
+          echo "Check the 'Fetch data' and 'Commit if changed' step logs above." >> "$GITHUB_STEP_SUMMARY"
+          echo "- If 'Fetch data' failed: Yahoo is likely blocking this runner (TLS-fingerprint/IP block). See the comment at the top of fetch_data.py." >> "$GITHUB_STEP_SUMMARY"
+          echo "- If 'Commit if changed' failed: a concurrent run likely raced the push. This should now auto-retry with rebase; if it still fails after 5 attempts, check for overlapping schedules or manual runs." >> "$GITHUB_STEP_SUMMARY"
